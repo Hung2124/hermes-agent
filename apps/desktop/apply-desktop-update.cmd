@@ -29,13 +29,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem wmic was removed in Windows 11; absolute timeout.exe path avoids GNU timeout shadowing it in git-bash PATH
+rem wmic was removed in Windows 11, so use PowerShell for the timestamp.
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set TS=%%I
 set BACKUP=%RES%\app.asar.bak-!TS!
 
 echo Closing Hermes...
 taskkill /IM Hermes.exe /F >nul 2>&1
-"%SystemRoot%\System32\timeout.exe" /t 3 /nobreak >nul
+rem Start-Sleep instead of timeout.exe: timeout aborts when stdin is redirected (e.g. invoked from git-bash/CI).
+powershell -NoProfile -Command "Start-Sleep -Seconds 3"
 
 echo Backing up current app.asar to app.asar.bak-!TS! ...
 copy /y "%RES%\app.asar" "!BACKUP!" >nul
@@ -59,12 +60,13 @@ start "" "%EXE%"
 
 rem --- Confirm a clean boot; auto-rollback if the app died on startup. ---
 echo Waiting %BOOT_WAIT%s to confirm Hermes stays up...
-"%SystemRoot%\System32\timeout.exe" /t %BOOT_WAIT% /nobreak >nul
-tasklist /FI "IMAGENAME eq Hermes.exe" 2>nul | find /I "Hermes.exe" >nul
+powershell -NoProfile -Command "Start-Sleep -Seconds %BOOT_WAIT%"
+rem Absolute find.exe path: git-bash puts GNU find first on PATH, which breaks the boot check.
+tasklist /FI "IMAGENAME eq Hermes.exe" 2>nul | "%SystemRoot%\System32\find.exe" /I "Hermes.exe" >nul
 if errorlevel 1 (
   echo ERROR: Hermes did not stay running - rolling back to app.asar.bak-!TS! ...
   taskkill /IM Hermes.exe /F >nul 2>&1
-  "%SystemRoot%\System32\timeout.exe" /t 2 /nobreak >nul
+  powershell -NoProfile -Command "Start-Sleep -Seconds 2"
   copy /y "!BACKUP!" "%RES%\app.asar" >nul
   start "" "%EXE%"
   echo Rolled back. The updated archive failed to boot and was reverted; old version is launching.
